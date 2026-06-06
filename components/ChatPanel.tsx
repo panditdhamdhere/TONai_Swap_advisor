@@ -6,8 +6,9 @@ import {
   type SwapAction,
 } from "@/lib/chat";
 import type { TokenBalance } from "@/lib/tonapi";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { SwapConfirmCard } from "./SwapConfirmCard";
+import { TypingIndicator } from "./TypingIndicator";
 
 interface DisplayMessage {
   id: string;
@@ -177,31 +178,37 @@ export function ChatPanel({
     void sendMessage(input);
   }
 
-  function handleExecuteSwap(action: SwapAction) {
-    // Omniston execution wired in the next step.
-    console.log("Execute swap:", action);
-  }
+  const reportSwapFailure = useCallback((message: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: createId(),
+        role: "assistant",
+        content: `Swap failed: ${message}`,
+      },
+    ]);
+  }, []);
 
   return (
-    <div className="flex h-full min-h-[560px] flex-col rounded-xl border border-white/10 bg-white/[0.02]">
-      <div className="border-b border-white/10 px-5 py-4">
-        <h2 className="text-xl font-semibold text-white">AI Swap Advisor</h2>
-        <p className="text-sm text-zinc-400">
+    <div className="flex h-full min-h-[480px] flex-col rounded-xl border border-border bg-card lg:min-h-[calc(100vh-5rem)]">
+      <div className="border-b border-border px-5 py-4">
+        <div className="flex items-center gap-2">
+          <span className="flex h-2 w-2 rounded-full bg-success" />
+          <h2 className="text-lg font-semibold text-foreground">AI Swap Advisor</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted">
           Ask for recommendations or confirm a swap in plain English.
         </p>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-        {!walletConnected && (
-          <div className="rounded-lg border border-dashed border-white/15 p-6 text-center text-sm text-zinc-400">
-            Connect your wallet to start chatting with the advisor.
-          </div>
-        )}
-
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5"
+      >
         {walletConnected && balancesLoading && messages.length === 0 && (
           <div className="space-y-3">
-            <div className="h-16 animate-pulse rounded-lg bg-white/[0.04]" />
-            <div className="h-10 w-2/3 animate-pulse rounded-lg bg-white/[0.04]" />
+            <div className="skeleton h-16 rounded-xl border border-border bg-background" />
+            <div className="skeleton h-10 w-2/3 rounded-xl border border-border bg-background" />
           </div>
         )}
 
@@ -210,40 +217,35 @@ export function ChatPanel({
             key={message.id}
             className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            <div
-              className={`max-w-[90%] space-y-3 ${
-                message.role === "user"
-                  ? "rounded-2xl rounded-br-md bg-blue-600/90 px-4 py-3 text-sm text-white"
-                  : "w-full"
-              }`}
-            >
-              {message.role === "assistant" && message.swapAction ? (
-                <div className="space-y-3">
-                  {message.content && (
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+            {message.role === "user" ? (
+              <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-4 py-3 text-sm leading-6 text-white">
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              </div>
+            ) : (
+              <div className="w-full max-w-[95%] space-y-3">
+                {message.content && (
+                  <div className="rounded-2xl rounded-bl-sm border border-border bg-background px-4 py-3">
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
                       {message.content}
                     </p>
-                  )}
+                  </div>
+                )}
+                {message.swapAction && (
                   <SwapConfirmCard
                     action={message.swapAction}
-                    onExecute={handleExecuteSwap}
+                    tokens={tokens}
+                    onFailure={reportSwapFailure}
                   />
-                </div>
-              ) : (
-                <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                  {message.content}
-                </p>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
 
-        {loading && messages.length > 0 && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl rounded-bl-md border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-400">
-              Thinking…
-            </div>
-          </div>
+        {loading && messages.length > 0 && <TypingIndicator />}
+
+        {loading && messages.length === 0 && walletConnected && !balancesLoading && (
+          <TypingIndicator />
         )}
 
         {error && (
@@ -253,7 +255,7 @@ export function ChatPanel({
         )}
       </div>
 
-      <div className="border-t border-white/10 px-5 py-4">
+      <div className="border-t border-border px-4 py-4 sm:px-5">
         {walletConnected && !loading && messages.length === 0 && !balancesLoading && (
           <div className="mb-3 flex flex-wrap gap-2">
             {SUGGESTIONS.map((suggestion) => (
@@ -261,7 +263,7 @@ export function ChatPanel({
                 key={suggestion}
                 type="button"
                 onClick={() => void sendMessage(suggestion)}
-                className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-white/20 hover:bg-white/[0.04]"
+                className="rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground transition-colors hover:border-accent/40 hover:text-accent"
               >
                 {suggestion}
               </button>
@@ -274,18 +276,14 @@ export function ChatPanel({
             type="text"
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder={
-              walletConnected
-                ? "Ask about swaps, rebalancing, or market moves…"
-                : "Connect wallet to chat"
-            }
+            placeholder="Ask about swaps, rebalancing, or market moves…"
             disabled={!walletConnected || loading}
-            className="flex-1 rounded-lg border border-white/10 bg-[#0F0F0F] px-4 py-2.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-blue-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none placeholder:text-muted focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!walletConnected || loading || !input.trim()}
-            className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Send
           </button>

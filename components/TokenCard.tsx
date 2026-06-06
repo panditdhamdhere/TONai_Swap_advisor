@@ -1,4 +1,8 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
+import { getTonImageUrl } from "@/lib/token-image";
 import type { TokenBalance } from "@/lib/tonapi";
 
 interface TokenCardProps {
@@ -30,33 +34,38 @@ function formatUsd(value: number): string {
 }
 
 export function TokenCard({ token }: TokenCardProps) {
+  const [imgSrc, setImgSrc] = useState(token.iconUrl);
+
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-white/20 hover:bg-white/[0.05]">
-      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-white/5">
+    <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/30">
+      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-background">
         <Image
-          src={token.iconUrl}
+          src={imgSrc}
           alt={token.symbol}
           fill
           className="object-cover"
           unoptimized
+          onError={() => setImgSrc(getTonImageUrl())}
         />
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate font-medium text-white">{token.symbol}</p>
+          <p className="truncate font-medium text-foreground">{token.symbol}</p>
           {token.isNative && (
-            <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-xs text-blue-300">
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">
               Native
             </span>
           )}
         </div>
-        <p className="truncate text-sm text-zinc-400">{token.name}</p>
+        <p className="truncate text-sm text-muted">{token.name}</p>
       </div>
 
       <div className="text-right">
-        <p className="font-medium text-white">{formatNumber(token.balance)}</p>
-        <p className="text-sm text-zinc-400">{formatUsd(token.usdValue)}</p>
+        <p className="font-medium text-foreground">
+          {formatNumber(token.balance)}
+        </p>
+        <p className="text-sm text-muted">{formatUsd(token.usdValue)}</p>
       </div>
     </div>
   );

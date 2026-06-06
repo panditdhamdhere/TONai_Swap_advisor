@@ -1,21 +1,34 @@
 "use client";
 
-import { fetchWalletTokens, type TokenBalance } from "@/lib/tonapi";
+import {
+  fetchRecentSwaps,
+  fetchWalletTokens,
+  type SwapEvent,
+  type TokenBalance,
+} from "@/lib/tonapi";
 import { useTonWallet } from "@tonconnect/ui-react";
 import { useEffect, useState } from "react";
 import { ChatPanel } from "./ChatPanel";
+import { LandingHero } from "./LandingHero";
 import { TokenCard } from "./TokenCard";
+import { TokenCardSkeleton } from "./TokenCardSkeleton";
+import { TransactionHistory } from "./TransactionHistory";
 
 export function Dashboard() {
   const wallet = useTonWallet();
   const [tokens, setTokens] = useState<TokenBalance[]>([]);
+  const [swaps, setSwaps] = useState<SwapEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [swapsLoading, setSwapsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [swapsError, setSwapsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!wallet?.account.address) {
       setTokens([]);
+      setSwaps([]);
       setError(null);
+      setSwapsError(null);
       return;
     }
 
@@ -42,30 +55,46 @@ export function Dashboard() {
       }
     }
 
+    async function loadSwaps() {
+      setSwapsLoading(true);
+      setSwapsError(null);
+
+      try {
+        const data = await fetchRecentSwaps(wallet!.account.address);
+        if (!cancelled) {
+          setSwaps(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setSwapsError("Unable to load swap history.");
+          setSwaps([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSwapsLoading(false);
+        }
+      }
+    }
+
     void loadBalances();
+    void loadSwaps();
 
     return () => {
       cancelled = true;
     };
   }, [wallet?.account.address]);
 
+  if (!wallet) {
+    return <LandingHero />;
+  }
+
   return (
-    <div className="mx-auto grid w-full max-w-7xl gap-6 px-6 py-8 lg:grid-cols-2 lg:items-start">
-      <section className="space-y-4">
-        {!wallet ? (
-          <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-10 text-center">
-            <p className="text-lg font-medium text-white">Connect your wallet</p>
-            <p className="mt-2 text-sm text-zinc-400">
-              Connect a TON wallet to view balances and get AI swap advice.
-            </p>
-          </div>
-        ) : loading ? (
+    <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[2fr_3fr] lg:items-start lg:py-8">
+      <section className="space-y-6 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto lg:pr-1">
+        {loading ? (
           <div className="grid gap-3">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-20 animate-pulse rounded-xl border border-white/10 bg-white/[0.03]"
-              />
+            {Array.from({ length: 4 }).map((_, index) => (
+              <TokenCardSkeleton key={index} />
             ))}
           </div>
         ) : error ? (
@@ -76,12 +105,14 @@ export function Dashboard() {
           <>
             <div className="flex items-end justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-white">Your Portfolio</h2>
-                <p className="text-sm text-zinc-400">
+                <h2 className="text-xl font-semibold text-foreground">
+                  Your Portfolio
+                </h2>
+                <p className="text-sm text-muted">
                   TON balance plus your top 5 jettons by USD value
                 </p>
               </div>
-              <p className="text-sm text-zinc-500">
+              <p className="font-mono text-xs text-muted">
                 {wallet.account.address.slice(0, 6)}…
                 {wallet.account.address.slice(-4)}
               </p>
@@ -94,12 +125,18 @@ export function Dashboard() {
             </div>
           </>
         )}
+
+        <TransactionHistory
+          swaps={swaps}
+          loading={swapsLoading}
+          error={swapsError}
+        />
       </section>
 
-      <section className="lg:sticky lg:top-6">
+      <section className="lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5rem)]">
         <ChatPanel
           tokens={tokens}
-          walletConnected={Boolean(wallet)}
+          walletConnected
           balancesLoading={loading}
         />
       </section>
