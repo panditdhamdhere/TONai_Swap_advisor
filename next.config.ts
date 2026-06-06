@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async rewrites() {
+    return [
+      {
+        source: "/tonconnect-manifest.json",
+        destination: "/api/tonconnect-manifest",
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {
