@@ -18,6 +18,12 @@ const GEMINI_MODELS = [
   "gemini-1.5-flash-latest",
 ] as const;
 
+const OPENROUTER_FREE_MODELS = [
+  "google/gemma-2-9b-it:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "qwen/qwen-2-7b-instruct:free",
+] as const;
+
 function buildPromptMessages(
   messages: ChatMessage[],
   walletContext: TokenBalance[],
@@ -41,6 +47,65 @@ function buildSystemPrompt(walletContext: TokenBalance[]): string {
     : SYSTEM_PROMPT;
 }
 
+async function callOpenRouter(
+  apiKey: string,
+  systemPrompt: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  const configuredModel = process.env.OPENROUTER_MODEL?.trim();
+  const models = configuredModel
+    ? [configuredModel, ...OPENROUTER_FREE_MODELS.filter((m) => m !== configuredModel)]
+    : [...OPENROUTER_FREE_MODELS];
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://ton-ai-swap-advisor.vercel.app";
+
+  for (const model of models) {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": siteUrl,
+          "X-Title": "TON AI Swap Advisor",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1024,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+          ],
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`OpenRouter API error (${model}):`, errorBody);
+      continue;
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    const text = data.choices?.[0]?.message?.content?.trim();
+    if (text) {
+      return text;
+    }
+  }
+
+  throw new Error(
+    "OpenRouter API failed. Check OPENROUTER_API_KEY at openrouter.ai/keys and optionally set OPENROUTER_MODEL to a free model like google/gemma-2-9b-it:free",
+  );
+}
+
 async function callGemini(
   apiKey: string,
   systemPrompt: string,
@@ -50,8 +115,6 @@ async function callGemini(
     role: message.role === "assistant" ? "model" : "user",
     parts: [{ text: message.content }],
   }));
-
-  let lastError = "Unknown Gemini error";
 
   for (const model of GEMINI_MODELS) {
     const response = await fetch(
@@ -68,8 +131,8 @@ async function callGemini(
     );
 
     if (!response.ok) {
-      lastError = await response.text();
-      console.error(`Gemini API error (${model}):`, lastError);
+      const errorBody = await response.text();
+      console.error(`Gemini API error (${model}):`, errorBody);
       continue;
     }
 
@@ -86,7 +149,7 @@ async function callGemini(
   }
 
   throw new Error(
-    "Gemini API failed. Check that GEMINI_API_KEY is valid at aistudio.google.com/apikey",
+    "Gemini API failed. Check GEMINI_API_KEY at aistudio.google.com/apikey",
   );
 }
 
@@ -116,9 +179,7 @@ async function callAnthropic(
   if (!response.ok) {
     const errorBody = await response.text();
     console.error("Anthropic API error:", errorBody);
-    throw new Error(
-      "Anthropic API failed (invalid key, no credits, or model unavailable). Use a free GEMINI_API_KEY instead — see README.",
-    );
+    throw new Error("Anthropic API failed (invalid key or no credits).");
   }
 
   const data = (await response.json()) as {
@@ -132,14 +193,15 @@ async function callAnthropic(
 }
 
 export async function POST(request: Request) {
+  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
 
-  if (!geminiKey && !anthropicKey) {
+  if (!openRouterKey && !geminiKey && !anthropicKey) {
     return NextResponse.json(
       {
         error:
-          "No AI API key configured. Add GEMINI_API_KEY (free) in Vercel → Settings → Environment Variables, then redeploy.",
+          "No AI API key configured. Add OPENROUTER_API_KEY (free) in Vercel → Settings → Environment Variables, then redeploy.",
       },
       { status: 500 },
     );
@@ -161,34 +223,44 @@ export async function POST(request: Request) {
   );
   const systemPrompt = buildSystemPrompt(walletContext);
 
-  const errors: string[] = [];
+  const providers: Array<{
+    name: string;
+    run: () => Promise<string>;
+  }> = [];
+
+  if (openRouterKey) {
+    providers.push({
+      name: "OpenRouter",
+      run: () => callOpenRouter(openRouterKey, systemPrompt, promptMessages),
+    });
+  }
 
   if (geminiKey) {
-    try {
-      const text = await callGemini(geminiKey, systemPrompt, promptMessages);
-      return NextResponse.json({ message: text });
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : "Gemini failed");
-    }
+    providers.push({
+      name: "Gemini",
+      run: () => callGemini(geminiKey, systemPrompt, promptMessages),
+    });
   }
 
   if (anthropicKey) {
+    providers.push({
+      name: "Anthropic",
+      run: () => callAnthropic(anthropicKey, systemPrompt, promptMessages),
+    });
+  }
+
+  const errors: string[] = [];
+
+  for (const provider of providers) {
     try {
-      const text = await callAnthropic(
-        anthropicKey,
-        systemPrompt,
-        promptMessages,
-      );
+      const text = await provider.run();
       return NextResponse.json({ message: text });
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : "Anthropic failed");
+      errors.push(
+        error instanceof Error ? error.message : `${provider.name} failed`,
+      );
     }
   }
 
-  return NextResponse.json(
-    {
-      error: errors.join(" | "),
-    },
-    { status: 500 },
-  );
+  return NextResponse.json({ error: errors.join(" | ") }, { status: 500 });
 }

@@ -32,7 +32,7 @@ Built for the [STON.fi Vibe Coding Hackathon](https://ston.fi/hackathon).
 | On-chain | `@ton/ton` (tx hash resolution) |
 | Balances | [TonAPI v2](https://tonapi.io) |
 | Token list | [STON.fi Assets API](https://api.ston.fi/v1/assets) |
-| AI | Google Gemini 2.0 Flash (free) or Anthropic Claude (optional) |
+| AI | OpenRouter (free models), Google Gemini, or Anthropic Claude |
 | Deploy | Vercel |
 
 ---
@@ -52,6 +52,7 @@ flowchart LR
   end
 
   subgraph External
+    OpenRouter[OpenRouter API]
     Gemini[Gemini API]
     TonAPI[TonAPI v2]
     Omniston[Omniston WebSocket]
@@ -63,6 +64,7 @@ flowchart LR
   UI --> Omniston
   UI --> ChatAPI
   Wallet --> ManifestAPI
+  ChatAPI --> OpenRouter
   ChatAPI --> Gemini
   UI --> STON
   Omniston --> Wallet
@@ -87,7 +89,7 @@ flowchart LR
 - Node.js 18+
 - npm
 - A TON wallet (Tonkeeper recommended)
-- Free [Gemini API key](https://aistudio.google.com/apikey)
+- A free AI API key from [OpenRouter](https://openrouter.ai/keys) (recommended), [Gemini](https://aistudio.google.com/apikey), or Anthropic
 
 ### 1. Clone & install
 
@@ -107,14 +109,16 @@ cp .env.example .env.local
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GEMINI_API_KEY` | Yes (for AI) | Free key from [Google AI Studio](https://aistudio.google.com/apikey) |
+| `OPENROUTER_API_KEY` | Yes (recommended) | Free key from [OpenRouter](https://openrouter.ai/keys) |
+| `OPENROUTER_MODEL` | No | e.g. `google/gemma-2-9b-it:free` (auto-fallback if omitted) |
+| `GEMINI_API_KEY` | No | Free alternative from [Google AI Studio](https://aistudio.google.com/apikey) |
 | `NEXT_PUBLIC_APP_URL` | Yes | `http://localhost:3000` locally, your Vercel URL in production |
-| `ANTHROPIC_API_KEY` | No | Optional paid alternative to Gemini |
+| `ANTHROPIC_API_KEY` | No | Optional paid alternative |
 
 Example `.env.local`:
 
 ```bash
-GEMINI_API_KEY=your_gemini_key_here
+OPENROUTER_API_KEY=your_openrouter_key_here
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
@@ -144,7 +148,7 @@ npm start
 
    | Name | Value |
    |------|-------|
-   | `GEMINI_API_KEY` | Your Gemini API key |
+   | `OPENROUTER_API_KEY` | Your OpenRouter API key |
    | `NEXT_PUBLIC_APP_URL` | `https://ton-ai-swap-advisor.vercel.app` |
 
 3. Deploy (or push to `main` for auto-deploy)
@@ -183,7 +187,7 @@ Percent amounts (e.g. `"50%"`) are resolved against your live wallet balance.
 ton-ai-swap-advisor/
 ├── app/
 │   ├── api/
-│   │   ├── chat/route.ts              # AI chat (Gemini / Anthropic)
+│   │   ├── chat/route.ts              # AI chat (OpenRouter / Gemini / Anthropic)
 │   │   └── tonconnect-manifest/route.ts  # Dynamic TonConnect manifest
 │   ├── layout.tsx
 │   ├── page.tsx
@@ -256,10 +260,12 @@ Dynamically served manifest for TonConnect (rewritten to `/api/tonconnect-manife
 - Ensure `NEXT_PUBLIC_APP_URL` is set in Vercel env vars
 - Verify: `https://your-domain/tonconnect-manifest.json` returns JSON
 
-### "Anthropic API key is not configured" / AI errors
+### AI chat errors
 
-- `.env.local` only works locally — add `GEMINI_API_KEY` in **Vercel Environment Variables**
+- `.env.local` only works locally — add `OPENROUTER_API_KEY` in **Vercel Environment Variables**
+- Remove invalid `ANTHROPIC_API_KEY` if you are not using Anthropic
 - Redeploy after adding env vars
+- Optional: set `OPENROUTER_MODEL=google/gemma-2-9b-it:free` for a specific free model
 
 ### "No swap route available"
 
@@ -295,4 +301,5 @@ MIT
 - [STON.fi](https://ston.fi) — Omniston SDK & hackathon
 - [TonAPI](https://tonapi.io) — On-chain data
 - [TonConnect](https://docs.ton.org/develop/dapps/ton-connect/overview) — Wallet connection
-- [Google AI Studio](https://aistudio.google.com) — Free Gemini API
+- [OpenRouter](https://openrouter.ai) — Free AI models
+- [Google AI Studio](https://aistudio.google.com) — Gemini API
